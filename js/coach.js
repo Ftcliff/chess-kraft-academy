@@ -1,4 +1,4 @@
-// Coach dashboard functionality - SIMPLIFIED VERSION
+// Coach dashboard functionality - AUTO-CREATES COLLECTIONS
 document.addEventListener('DOMContentLoaded', function() {
     // Check authentication
     const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -48,6 +48,12 @@ function loadCoachData(coachId) {
             const studentSelect = document.getElementById('studentSelect');
             studentSelect.innerHTML = '<option value="">Select Student</option>';
             
+            if (querySnapshot.size === 0) {
+                console.log("No students assigned to this coach");
+                document.getElementById('totalStudents').textContent = '0';
+                return;
+            }
+            
             querySnapshot.forEach((doc) => {
                 const assignment = doc.data();
                 // Get student details
@@ -68,6 +74,7 @@ function loadCoachData(coachId) {
         })
         .catch((error) => {
             console.error('Error loading students:', error);
+            document.getElementById('totalStudents').textContent = '0';
         });
     
     // Load classes
@@ -119,7 +126,15 @@ function loadCoachClasses(coachId) {
         })
         .catch((error) => {
             console.error('Error loading classes:', error);
-            alert('Error loading classes: ' + error.message);
+            document.getElementById('totalClasses').textContent = '0';
+            document.getElementById('totalAmount').textContent = '₹0';
+            
+            // If classes collection doesn't exist, it's okay - just show empty state
+            if (error.code === 'failed-precondition' || error.code === 'not-found') {
+                console.log('Classes collection not found yet - this is normal for new setup');
+            } else {
+                alert('Error loading classes: ' + error.message);
+            }
         });
 }
 
@@ -233,7 +248,7 @@ function saveClass() {
     
     console.log("Saving class data:", classData);
     
-    // Save to Firestore
+    // Save to Firestore - this will automatically create the collection
     db.collection('classes').add(classData)
         .then((docRef) => {
             console.log("Class saved with ID:", docRef.id);
@@ -253,11 +268,11 @@ function saveClass() {
         })
         .catch((error) => {
             console.error('Error adding class:', error);
-            alert('Error adding class: ' + error.message);
             
-            // If it's a permissions error, guide user to fix rules
-            if (error.code === 'permission-denied') {
-                alert('PERMISSIONS ERROR: Please update Firestore security rules to allow writes. Go to Firebase Console → Firestore → Rules and use the temporary rules mentioned in the setup.');
+            if (error.code === 'not-found') {
+                alert('Database not ready. Please use the setup script first or contact admin.');
+            } else {
+                alert('Error adding class: ' + error.message);
             }
         })
         .finally(() => {
