@@ -380,6 +380,96 @@
             </div>
         </div>
     </div>
+<!-- Coach Payments Modal -->
+<div class="modal fade" id="coachPaymentsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Coach Payments Management</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Filters -->
+                <div class="row mb-4">
+                    <div class="col-md-4">
+                        <label for="paymentCoachSelect" class="form-label">Select Coach</label>
+                        <select class="form-select" id="paymentCoachSelect">
+                            <option value="">Select Coach</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="paymentStartDate" class="form-label">Start Date</label>
+                        <input type="date" class="form-control" id="paymentStartDate">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="paymentEndDate" class="form-label">End Date</label>
+                        <input type="date" class="form-control" id="paymentEndDate">
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button class="btn btn-primary w-100" onclick="loadCoachClassesForPayment()">
+                            <i class="fas fa-search"></i> Load
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Payment Summary -->
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <div class="card bg-warning text-white">
+                            <div class="card-body text-center">
+                                <h5>Pending Amount</h5>
+                                <h3 id="totalPendingAmount">₹0.00</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-success text-white">
+                            <div class="card-body text-center">
+                                <h5>Completed Amount</h5>
+                                <h3 id="totalCompletedAmount">₹0.00</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-primary text-white">
+                            <div class="card-body text-center">
+                                <h5>Total Amount</h5>
+                                <h3 id="totalOverallAmount">₹0.00</h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Classes Table -->
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Student</th>
+                                <th>Type</th>
+                                <th>Duration</th>
+                                <th>Fee</th>
+                                <th>Status</th>
+                                <th>Payment Action</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="coachClassesTableBody">
+                            <!-- Classes will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-success" onclick="exportCoachPayments()">
+                    <i class="fas fa-download"></i> Export to CSV
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 
     <script src="js/firebase-config.js"></script>
     <script src="js/auth.js"></script>
