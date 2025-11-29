@@ -39,109 +39,148 @@ function loadAdminData() {
 }
 
 function loadStats() {
+    console.log("Loading admin stats...");
+    
     // Total Coaches
     db.collection('users')
         .where('role', '==', 'coach')
         .get()
         .then((querySnapshot) => {
+            console.log("Coaches found:", querySnapshot.size);
             document.getElementById('totalCoaches').textContent = querySnapshot.size;
+        })
+        .catch((error) => {
+            console.error('Error loading coaches count:', error);
+            document.getElementById('totalCoaches').textContent = '0';
         });
     
     // Total Students
     db.collection('students')
         .get()
         .then((querySnapshot) => {
+            console.log("Students found:", querySnapshot.size);
             document.getElementById('totalStudents').textContent = querySnapshot.size;
+        })
+        .catch((error) => {
+            console.error('Error loading students count:', error);
+            document.getElementById('totalStudents').textContent = '0';
         });
     
     // Total Classes and Revenue
     db.collection('classes')
         .get()
         .then((querySnapshot) => {
+            console.log("Classes found:", querySnapshot.size);
+            
             let totalClasses = 0;
             let totalRevenue = 0;
             
             querySnapshot.forEach((doc) => {
                 totalClasses++;
-                totalRevenue += parseFloat(doc.data().classFee) || 0;
+                const classFee = parseFloat(doc.data().classFee) || 0;
+                totalRevenue += classFee;
             });
             
             document.getElementById('totalClasses').textContent = totalClasses;
             document.getElementById('totalRevenue').textContent = `₹${totalRevenue.toFixed(2)}`;
+        })
+        .catch((error) => {
+            console.error('Error loading classes count:', error);
+            document.getElementById('totalClasses').textContent = '0';
+            document.getElementById('totalRevenue').textContent = '₹0';
         });
 }
 
 function loadRecentClasses() {
     const tableBody = document.getElementById('recentClassesTable');
-    tableBody.innerHTML = '';
+    tableBody.innerHTML = '<tr><td colspan="6" class="text-center">Loading...</td></tr>';
     
     db.collection('classes')
-        .orderBy('classDate', 'desc')
+        .orderBy('createdAt', 'desc')
         .limit(10)
         .get()
         .then((querySnapshot) => {
+            tableBody.innerHTML = '';
+            
             if (querySnapshot.size === 0) {
                 tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No classes found</td></tr>';
                 return;
             }
             
+            const classPromises = [];
+            
             querySnapshot.forEach((doc) => {
                 const classData = doc.data();
-                const row = document.createElement('tr');
+                classData.id = doc.id;
                 
-                // Format date
-                const classDate = new Date(classData.classDate.seconds * 1000);
-                const formattedDate = classDate.toLocaleDateString('en-IN');
-                
-                // Get coach name
-                let coachName = 'Unknown Coach';
-                if (classData.coachId) {
-                    db.collection('users').doc(classData.coachId).get()
-                        .then((coachDoc) => {
+                const promise = new Promise((resolve) => {
+                    // Get coach name
+                    let coachName = 'Unknown Coach';
+                    const coachPromise = classData.coachId ? 
+                        db.collection('users').doc(classData.coachId).get() : 
+                        Promise.resolve({ exists: false });
+                    
+                    // Get student name for individual classes
+                    let studentName = classData.classType === 'individual' ? 'Unknown Student' : 'Group Session';
+                    const studentPromise = (classData.classType === 'individual' && classData.studentId) ? 
+                        db.collection('students').doc(classData.studentId).get() : 
+                        Promise.resolve({ exists: false });
+                    
+                    Promise.all([coachPromise, studentPromise])
+                        .then(([coachDoc, studentDoc]) => {
                             if (coachDoc.exists) {
                                 coachName = coachDoc.data().name;
-                                row.cells[1].textContent = coachName;
                             }
-                        });
-                }
-                
-                // Get student name for individual classes
-                let studentName = classData.classType === 'individual' ? 'Unknown Student' : 'Group Session';
-                if (classData.classType === 'individual' && classData.studentId) {
-                    db.collection('students').doc(classData.studentId).get()
-                        .then((studentDoc) => {
                             if (studentDoc.exists) {
                                 studentName = studentDoc.data().name;
-                                row.cells[2].textContent = studentName;
                             }
+                            
+                            const row = document.createElement('tr');
+                            
+                            // Format date
+                            let classDate;
+                            if (classData.classDate && classData.classDate.seconds) {
+                                classDate = new Date(classData.classDate.seconds * 1000);
+                            } else {
+                                classDate = new Date(classData.classDate);
+                            }
+                            const formattedDate = classDate.toLocaleDateString('en-IN');
+                            
+                            row.innerHTML = `
+                                <td>${formattedDate}</td>
+                                <td>${coachName}</td>
+                                <td>${studentName}</td>
+                                <td>${classData.classType.charAt(0).toUpperCase() + classData.classType.slice(1)}</td>
+                                <td>${classData.duration} mins</td>
+                                <td>₹${classData.classFee}</td>
+                            `;
+                            
+                            tableBody.appendChild(row);
+                            resolve();
                         });
-                }
+                });
                 
-                row.innerHTML = `
-                    <td>${formattedDate}</td>
-                    <td>${coachName}</td>
-                    <td>${studentName}</td>
-                    <td>${classData.classType.charAt(0).toUpperCase() + classData.classType.slice(1)}</td>
-                    <td>${classData.duration} mins</td>
-                    <td>₹${classData.classFee}</td>
-                `;
-                
-                tableBody.appendChild(row);
+                classPromises.push(promise);
             });
+            
+            return Promise.all(classPromises);
         })
         .catch((error) => {
             console.error('Error loading recent classes:', error);
+            tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Error loading classes</td></tr>';
         });
 }
 
 function loadCoaches() {
     const tableBody = document.getElementById('coachesTableBody');
-    tableBody.innerHTML = '';
+    tableBody.innerHTML = '<tr><td colspan="4" class="text-center">Loading...</td></tr>';
     
     db.collection('users')
         .where('role', '==', 'coach')
         .get()
         .then((querySnapshot) => {
+            tableBody.innerHTML = '';
+            
             if (querySnapshot.size === 0) {
                 tableBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No coaches found</td></tr>';
                 return;
@@ -170,6 +209,7 @@ function loadCoaches() {
         })
         .catch((error) => {
             console.error('Error loading coaches:', error);
+            tableBody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error loading coaches</td></tr>';
         });
 }
 
@@ -195,6 +235,9 @@ function populateCoachSelects() {
                         option.textContent = coach.name;
                         select.appendChild(option);
                     });
+                })
+                .catch((error) => {
+                    console.error('Error populating coach selects:', error);
                 });
         }
     });
@@ -202,53 +245,80 @@ function populateCoachSelects() {
 
 function loadStudents() {
     const tableBody = document.getElementById('studentsTableBody');
-    tableBody.innerHTML = '';
+    tableBody.innerHTML = '<tr><td colspan="6" class="text-center">Loading...</td></tr>';
     
     db.collection('students')
         .get()
         .then((querySnapshot) => {
+            tableBody.innerHTML = '';
+            
             if (querySnapshot.size === 0) {
                 tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No students found</td></tr>';
                 return;
             }
             
+            const studentPromises = [];
+            
             querySnapshot.forEach((doc) => {
                 const student = doc.data();
-                const row = document.createElement('tr');
+                const studentId = doc.id;
                 
-                // Get assigned coach name
-                let coachName = 'Not Assigned';
-                if (student.assignedCoachId) {
-                    db.collection('users').doc(student.assignedCoachId).get()
+                const promise = new Promise((resolve) => {
+                    // Get assigned coach name
+                    let coachName = 'Not Assigned';
+                    let coachId = null;
+                    
+                    // Check assignments for this student
+                    db.collection('assignments')
+                        .where('studentId', '==', studentId)
+                        .where('status', '==', 'active')
+                        .get()
+                        .then((assignmentsSnapshot) => {
+                            if (assignmentsSnapshot.size > 0) {
+                                const assignment = assignmentsSnapshot.docs[0].data();
+                                coachId = assignment.coachId;
+                                
+                                return db.collection('users').doc(coachId).get();
+                            } else {
+                                return Promise.resolve({ exists: false });
+                            }
+                        })
                         .then((coachDoc) => {
                             if (coachDoc.exists) {
                                 coachName = coachDoc.data().name;
-                                row.cells[4].textContent = coachName;
                             }
+                            
+                            const row = document.createElement('tr');
+                            
+                            row.innerHTML = `
+                                <td>${student.name}</td>
+                                <td>${student.email || 'N/A'}</td>
+                                <td>${student.phone || 'N/A'}</td>
+                                <td>${student.parentName || 'N/A'}</td>
+                                <td>${coachName}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary me-1" onclick="assignStudent('${studentId}', '${student.name.replace(/'/g, "\\'")}')">
+                                        <i class="fas fa-user-plus"></i> Assign
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteStudent('${studentId}')">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </td>
+                            `;
+                            
+                            tableBody.appendChild(row);
+                            resolve();
                         });
-                }
+                });
                 
-                row.innerHTML = `
-                    <td>${student.name}</td>
-                    <td>${student.email || 'N/A'}</td>
-                    <td>${student.phone || 'N/A'}</td>
-                    <td>${student.parentName || 'N/A'}</td>
-                    <td>${coachName}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-primary me-1" onclick="assignStudent('${doc.id}', '${student.name}')">
-                            <i class="fas fa-user-plus"></i> Assign
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteStudent('${doc.id}')">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </td>
-                `;
-                
-                tableBody.appendChild(row);
+                studentPromises.push(promise);
             });
+            
+            return Promise.all(studentPromises);
         })
         .catch((error) => {
             console.error('Error loading students:', error);
+            tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Error loading students</td></tr>';
         });
 }
 
@@ -263,10 +333,18 @@ function saveCoach() {
         return;
     }
     
+    // Show loading state
+    const saveBtn = document.getElementById('saveCoachBtn');
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Saving...';
+    
+    console.log("Creating coach:", { name, email });
+    
     // Create coach in Firebase Auth
     auth.createUserWithEmailAndPassword(email, password)
         .then((userCredential) => {
             const userId = userCredential.user.uid;
+            console.log("Coach created in Auth with ID:", userId);
             
             // Save coach data to Firestore
             return db.collection('users').doc(userId).set({
@@ -280,13 +358,23 @@ function saveCoach() {
         .then(() => {
             alert('Coach added successfully!');
             document.getElementById('addCoachForm').reset();
-            document.getElementById('addCoachModal').querySelector('.btn-close').click();
+            
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addCoachModal'));
+            if (modal) modal.hide();
+            
+            // Refresh data
             loadCoaches();
-            loadStats(); // Refresh stats
+            loadStats();
         })
         .catch((error) => {
             console.error('Error adding coach:', error);
             alert('Error adding coach: ' + error.message);
+        })
+        .finally(() => {
+            // Reset button state
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Save Coach';
         });
 }
 
@@ -303,18 +391,27 @@ function saveStudent() {
         return;
     }
     
+    // Show loading state
+    const saveBtn = document.getElementById('saveStudentBtn');
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Saving...';
+    
     const studentData = {
         name: name,
-        email: email,
-        phone: phone,
-        parentName: parentName,
-        parentPhone: parentPhone,
+        email: email || '',
+        phone: phone || '',
+        parentName: parentName || '',
+        parentPhone: parentPhone || '',
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
     };
+    
+    console.log("Saving student:", studentData);
     
     // Save student to Firestore
     db.collection('students').add(studentData)
         .then((studentDoc) => {
+            console.log("Student saved with ID:", studentDoc.id);
+            
             // If coach is assigned, create assignment
             if (assignedCoachId) {
                 return db.collection('assignments').add({
@@ -323,23 +420,30 @@ function saveStudent() {
                     assignedDate: new Date(),
                     status: 'active'
                 }).then(() => {
-                    // Update student with coach assignment
-                    return studentDoc.update({
-                        assignedCoachId: assignedCoachId
-                    });
+                    console.log("Assignment created for coach:", assignedCoachId);
                 });
             }
         })
         .then(() => {
             alert('Student added successfully!');
             document.getElementById('addStudentForm').reset();
-            document.getElementById('addStudentModal').querySelector('.btn-close').click();
+            
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addStudentModal'));
+            if (modal) modal.hide();
+            
+            // Refresh data
             loadStudents();
-            loadStats(); // Refresh stats
+            loadStats();
         })
         .catch((error) => {
             console.error('Error adding student:', error);
             alert('Error adding student: ' + error.message);
+        })
+        .finally(() => {
+            // Reset button state
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Save Student';
         });
 }
 
@@ -365,6 +469,10 @@ function assignStudent(studentId, studentName) {
             
             // Show modal
             new bootstrap.Modal(document.getElementById('assignStudentModal')).show();
+        })
+        .catch((error) => {
+            console.error('Error loading coaches for assignment:', error);
+            alert('Error loading coaches: ' + error.message);
         });
 }
 
@@ -376,6 +484,13 @@ function saveAssignment() {
         alert('Please select a coach');
         return;
     }
+    
+    // Show loading state
+    const saveBtn = document.getElementById('saveAssignmentBtn');
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Saving...';
+    
+    console.log("Assigning student", studentId, "to coach", coachId);
     
     // Check if assignment already exists
     db.collection('assignments')
@@ -401,29 +516,32 @@ function saveAssignment() {
             });
         })
         .then(() => {
-            // Update student record
-            return db.collection('students').doc(studentId).update({
-                assignedCoachId: coachId
-            });
-        })
-        .then(() => {
             alert('Student assigned successfully!');
-            document.getElementById('assignStudentModal').querySelector('.btn-close').click();
+            
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('assignStudentModal'));
+            if (modal) modal.hide();
+            
+            // Refresh students list
             loadStudents();
         })
         .catch((error) => {
             console.error('Error assigning student:', error);
             alert('Error assigning student: ' + error.message);
+        })
+        .finally(() => {
+            // Reset button state
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Assign';
         });
 }
 
 function deleteCoach(coachId) {
-    if (confirm('Are you sure you want to delete this coach? This action cannot be undone.')) {
+    if (confirm('Are you sure you want to delete this coach? This will remove them from the system.')) {
         // Delete coach from Firestore
         db.collection('users').doc(coachId).delete()
             .then(() => {
-                // Note: To delete from Authentication, you need Admin SDK (server-side)
-                // For now, we'll just remove from Firestore
+                alert('Coach deleted successfully!');
                 loadCoaches();
                 loadStats();
             })
@@ -451,6 +569,7 @@ function deleteStudent(studentId) {
                     });
             })
             .then(() => {
+                alert('Student deleted successfully!');
                 loadStudents();
                 loadStats();
             })
@@ -471,7 +590,7 @@ function viewReports() {
 
 function loadReports() {
     const tableBody = document.getElementById('reportsTableBody');
-    tableBody.innerHTML = '';
+    tableBody.innerHTML = '<tr><td colspan="6" class="text-center">Loading...</td></tr>';
     
     let query = db.collection('classes');
     
@@ -488,12 +607,16 @@ function loadReports() {
         query = query.where('classType', '==', typeFilter);
     }
     
-    query.orderBy('classDate', 'desc').get()
+    query.orderBy('createdAt', 'desc').get()
         .then((querySnapshot) => {
+            tableBody.innerHTML = '';
+            
             if (querySnapshot.size === 0) {
                 tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No classes found</td></tr>';
                 return;
             }
+            
+            const reportPromises = [];
             
             querySnapshot.forEach((doc) => {
                 const classData = doc.data();
@@ -507,49 +630,60 @@ function loadReports() {
                     }
                 }
                 
-                const row = document.createElement('tr');
-                
-                // Format date
-                const classDate = new Date(classData.classDate.seconds * 1000);
-                const formattedDate = classDate.toLocaleDateString('en-IN');
-                
-                // Get coach name
-                let coachName = 'Unknown Coach';
-                if (classData.coachId) {
-                    db.collection('users').doc(classData.coachId).get()
-                        .then((coachDoc) => {
+                const promise = new Promise((resolve) => {
+                    // Get coach name
+                    let coachName = 'Unknown Coach';
+                    const coachPromise = classData.coachId ? 
+                        db.collection('users').doc(classData.coachId).get() : 
+                        Promise.resolve({ exists: false });
+                    
+                    // Get student name for individual classes
+                    let studentName = classData.classType === 'individual' ? 'Unknown Student' : 'Group Session';
+                    const studentPromise = (classData.classType === 'individual' && classData.studentId) ? 
+                        db.collection('students').doc(classData.studentId).get() : 
+                        Promise.resolve({ exists: false });
+                    
+                    Promise.all([coachPromise, studentPromise])
+                        .then(([coachDoc, studentDoc]) => {
                             if (coachDoc.exists) {
                                 coachName = coachDoc.data().name;
-                                row.cells[1].textContent = coachName;
                             }
-                        });
-                }
-                
-                // Get student name for individual classes
-                let studentName = classData.classType === 'individual' ? 'Unknown Student' : 'Group Session';
-                if (classData.classType === 'individual' && classData.studentId) {
-                    db.collection('students').doc(classData.studentId).get()
-                        .then((studentDoc) => {
                             if (studentDoc.exists) {
                                 studentName = studentDoc.data().name;
-                                row.cells[2].textContent = studentName;
                             }
+                            
+                            const row = document.createElement('tr');
+                            
+                            // Format date
+                            let classDate;
+                            if (classData.classDate && classData.classDate.seconds) {
+                                classDate = new Date(classData.classDate.seconds * 1000);
+                            } else {
+                                classDate = new Date(classData.classDate);
+                            }
+                            const formattedDate = classDate.toLocaleDateString('en-IN');
+                            
+                            row.innerHTML = `
+                                <td>${formattedDate}</td>
+                                <td>${coachName}</td>
+                                <td>${studentName}</td>
+                                <td>${classData.classType.charAt(0).toUpperCase() + classData.classType.slice(1)}</td>
+                                <td>${classData.duration} mins</td>
+                                <td>₹${classData.classFee}</td>
+                            `;
+                            
+                            tableBody.appendChild(row);
+                            resolve();
                         });
-                }
+                });
                 
-                row.innerHTML = `
-                    <td>${formattedDate}</td>
-                    <td>${coachName}</td>
-                    <td>${studentName}</td>
-                    <td>${classData.classType.charAt(0).toUpperCase() + classData.classType.slice(1)}</td>
-                    <td>${classData.duration} mins</td>
-                    <td>₹${classData.classFee}</td>
-                `;
-                
-                tableBody.appendChild(row);
+                reportPromises.push(promise);
             });
+            
+            return Promise.all(reportPromises);
         })
         .catch((error) => {
             console.error('Error loading reports:', error);
+            tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Error loading reports</td></tr>';
         });
 }
