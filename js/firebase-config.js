@@ -1,6 +1,4 @@
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-
-// Firebase configuration - REPLACE WITH YOUR ACTUAL CONFIG FROM FIREBASE
+// Firebase configuration for Chess Kraft Academy
 const firebaseConfig = {
   apiKey: "AIzaSyBkdOw_hCe_uIFFIeBni_pO7aYEJB8IV_8",
   authDomain: "chess-kraft-academy.firebaseapp.com",
@@ -11,11 +9,9 @@ const firebaseConfig = {
   measurementId: "G-V55ZDDHS9C"
 };
 
-
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
 
-// Test connection
-console.log("Firebase initialized successfully");
+console.log("Firebase initialized for Chess Kraft Academy");
