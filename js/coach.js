@@ -1,4 +1,4 @@
-// Coach dashboard functionality - AUTO-CREATES COLLECTIONS
+// Coach dashboard functionality with Payment Status
 document.addEventListener('DOMContentLoaded', function() {
     // Check authentication
     const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -48,12 +48,6 @@ function loadCoachData(coachId) {
             const studentSelect = document.getElementById('studentSelect');
             studentSelect.innerHTML = '<option value="">Select Student</option>';
             
-            if (querySnapshot.size === 0) {
-                console.log("No students assigned to this coach");
-                document.getElementById('totalStudents').textContent = '0';
-                return;
-            }
-            
             querySnapshot.forEach((doc) => {
                 const assignment = doc.data();
                 // Get student details
@@ -74,7 +68,6 @@ function loadCoachData(coachId) {
         })
         .catch((error) => {
             console.error('Error loading students:', error);
-            document.getElementById('totalStudents').textContent = '0';
         });
     
     // Load classes
@@ -92,6 +85,8 @@ function loadCoachClasses(coachId) {
             
             let totalClasses = 0;
             let totalAmount = 0;
+            let pendingAmount = 0;
+            let completedAmount = 0;
             const allClasses = [];
             
             querySnapshot.forEach((doc) => {
@@ -100,7 +95,15 @@ function loadCoachClasses(coachId) {
                 allClasses.push(classData);
                 
                 totalClasses++;
-                totalAmount += parseFloat(classData.classFee) || 0;
+                const classFee = parseFloat(classData.classFee) || 0;
+                totalAmount += classFee;
+                
+                // Calculate pending and completed amounts
+                if (classData.paymentStatus === 'completed') {
+                    completedAmount += classFee;
+                } else {
+                    pendingAmount += classFee;
+                }
             });
             
             // Sort manually by date (newest first)
@@ -120,6 +123,9 @@ function loadCoachClasses(coachId) {
             document.getElementById('totalClasses').textContent = totalClasses;
             document.getElementById('totalAmount').textContent = `₹${totalAmount.toFixed(2)}`;
             
+            // Add payment status stats
+            updatePaymentStats(completedAmount, pendingAmount);
+            
             // Populate class tables
             populateClassTable('individualClassesTable', individualClasses);
             populateClassTable('groupClassesTable', groupClasses);
@@ -128,14 +134,60 @@ function loadCoachClasses(coachId) {
             console.error('Error loading classes:', error);
             document.getElementById('totalClasses').textContent = '0';
             document.getElementById('totalAmount').textContent = '₹0';
-            
-            // If classes collection doesn't exist, it's okay - just show empty state
-            if (error.code === 'failed-precondition' || error.code === 'not-found') {
-                console.log('Classes collection not found yet - this is normal for new setup');
-            } else {
-                alert('Error loading classes: ' + error.message);
-            }
+            updatePaymentStats(0, 0);
         });
+}
+
+function updatePaymentStats(completed, pending) {
+    // Create or update payment stats cards
+    let statsRow = document.getElementById('statsRow');
+    
+    // Check if payment stats cards already exist
+    if (!document.getElementById('completedAmount')) {
+        // Add payment stats cards after existing stats
+        const paymentStatsHTML = `
+            <div class="col-md-3">
+                <div class="card text-white bg-success mb-3">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h4 id="completedAmount">₹${completed.toFixed(2)}</h4>
+                                <p>Payment Completed</p>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-check-circle fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-white bg-warning mb-3">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h4 id="pendingAmount">₹${pending.toFixed(2)}</h4>
+                                <p>Payment Pending</p>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-clock fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Insert after the first 3 cards
+        const existingCards = statsRow.querySelectorAll('.col-md-4');
+        if (existingCards.length >= 3) {
+            existingCards[2].insertAdjacentHTML('afterend', paymentStatsHTML);
+        }
+    } else {
+        // Update existing payment stats
+        document.getElementById('completedAmount').textContent = `₹${completed.toFixed(2)}`;
+        document.getElementById('pendingAmount').textContent = `₹${pending.toFixed(2)}`;
+    }
 }
 
 function populateClassTable(tableId, classes) {
@@ -143,7 +195,7 @@ function populateClassTable(tableId, classes) {
     tableBody.innerHTML = '';
     
     if (classes.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No classes found</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No classes found</td></tr>';
         return;
     }
     
@@ -158,6 +210,12 @@ function populateClassTable(tableId, classes) {
             classDate = new Date(classItem.classDate);
         }
         const formattedDate = classDate.toLocaleDateString('en-IN');
+        
+        // Get payment status badge
+        const paymentStatus = classItem.paymentStatus || 'pending';
+        const statusBadge = paymentStatus === 'completed' ? 
+            '<span class="badge bg-success">Completed</span>' : 
+            '<span class="badge bg-warning">Pending</span>';
         
         if (classItem.classType === 'individual') {
             let studentName = 'Unknown Student';
@@ -181,6 +239,7 @@ function populateClassTable(tableId, classes) {
                 <td>${studentName}</td>
                 <td>${classItem.duration} mins</td>
                 <td>₹${classItem.classFee}</td>
+                <td>${statusBadge}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-danger" onclick="deleteClass('${classItem.id}')">
                         <i class="fas fa-trash"></i>
@@ -194,6 +253,7 @@ function populateClassTable(tableId, classes) {
                 <td>Group Session</td>
                 <td>${classItem.duration} mins</td>
                 <td>₹${classItem.classFee}</td>
+                <td>${statusBadge}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-danger" onclick="deleteClass('${classItem.id}')">
                         <i class="fas fa-trash"></i>
@@ -231,6 +291,7 @@ function saveClass() {
         duration: parseInt(duration),
         classFee: parseFloat(classFee),
         notes: notes || '',
+        paymentStatus: 'pending', // Default status
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
     };
     
@@ -248,11 +309,11 @@ function saveClass() {
     
     console.log("Saving class data:", classData);
     
-    // Save to Firestore - this will automatically create the collection
+    // Save to Firestore
     db.collection('classes').add(classData)
         .then((docRef) => {
             console.log("Class saved with ID:", docRef.id);
-            alert('Class added successfully!');
+            alert('Class added successfully! Payment status: Pending');
             
             // Reset form
             document.getElementById('addClassForm').reset();
@@ -268,12 +329,7 @@ function saveClass() {
         })
         .catch((error) => {
             console.error('Error adding class:', error);
-            
-            if (error.code === 'not-found') {
-                alert('Database not ready. Please use the setup script first or contact admin.');
-            } else {
-                alert('Error adding class: ' + error.message);
-            }
+            alert('Error adding class: ' + error.message);
         })
         .finally(() => {
             // Reset button state
