@@ -687,3 +687,240 @@ function loadReports() {
             tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Error loading reports</td></tr>';
         });
 }
+
+// Add to existing admin.js - NEW FUNCTIONS FOR PAYMENT MANAGEMENT
+
+function showCoachPayments() {
+    // Load coaches for payment management
+    loadCoachesForPayments();
+    
+    // Show modal
+    new bootstrap.Modal(document.getElementById('coachPaymentsModal')).show();
+}
+
+function loadCoachesForPayments() {
+    const coachSelect = document.getElementById('paymentCoachSelect');
+    coachSelect.innerHTML = '<option value="">Select Coach</option>';
+    
+    db.collection('users')
+        .where('role', '==', 'coach')
+        .get()
+        .then((querySnapshot) => {
+            querySnapshot.forEach((doc) => {
+                const coach = doc.data();
+                const option = document.createElement('option');
+                option.value = doc.id;
+                option.textContent = coach.name;
+                coachSelect.appendChild(option);
+            });
+        })
+        .catch((error) => {
+            console.error('Error loading coaches for payments:', error);
+        });
+}
+
+function loadCoachClassesForPayment() {
+    const coachId = document.getElementById('paymentCoachSelect').value;
+    const startDate = document.getElementById('paymentStartDate').value;
+    const endDate = document.getElementById('paymentEndDate').value;
+    
+    if (!coachId) {
+        alert('Please select a coach');
+        return;
+    }
+    
+    const tableBody = document.getElementById('coachClassesTableBody');
+    tableBody.innerHTML = '<tr><td colspan="8" class="text-center">Loading...</td></tr>';
+    
+    let query = db.collection('classes').where('coachId', '==', coachId);
+    
+    query.get()
+        .then((querySnapshot) => {
+            tableBody.innerHTML = '';
+            
+            if (querySnapshot.size === 0) {
+                tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No classes found for this coach</td></tr>';
+                return;
+            }
+            
+            let totalPending = 0;
+            let totalCompleted = 0;
+            const classPromises = [];
+            
+            querySnapshot.forEach((doc) => {
+                const classData = doc.data();
+                classData.id = doc.id;
+                
+                // Date filtering
+                let classDate;
+                if (classData.classDate && classData.classDate.seconds) {
+                    classDate = new Date(classData.classDate.seconds * 1000);
+                } else {
+                    classDate = new Date(classData.classDate);
+                }
+                
+                // Apply date filter if provided
+                if (startDate && classDate < new Date(startDate)) {
+                    return;
+                }
+                if (endDate && classDate > new Date(endDate + 'T23:59:59')) {
+                    return;
+                }
+                
+                const promise = new Promise((resolve) => {
+                    // Get student name
+                    let studentName = classData.classType === 'individual' ? 'Unknown Student' : 'Group Session';
+                    const studentPromise = (classData.classType === 'individual' && classData.studentId) ? 
+                        db.collection('students').doc(classData.studentId).get() : 
+                        Promise.resolve({ exists: false });
+                    
+                    studentPromise.then((studentDoc) => {
+                        if (studentDoc.exists) {
+                            studentName = studentDoc.data().name;
+                        }
+                        
+                        const paymentStatus = classData.paymentStatus || 'pending';
+                        const classFee = parseFloat(classData.classFee) || 0;
+                        
+                        // Update totals
+                        if (paymentStatus === 'completed') {
+                            totalCompleted += classFee;
+                        } else {
+                            totalPending += classFee;
+                        }
+                        
+                        const row = document.createElement('tr');
+                        const formattedDate = classDate.toLocaleDateString('en-IN');
+                        
+                        const statusBadge = paymentStatus === 'completed' ? 
+                            '<span class="badge bg-success">Completed</span>' : 
+                            '<span class="badge bg-warning">Pending</span>';
+                        
+                        const paymentAction = paymentStatus === 'pending' ? 
+                            `<button class="btn btn-sm btn-success" onclick="markPaymentComplete('${doc.id}')">
+                                <i class="fas fa-check"></i> Mark Paid
+                            </button>` :
+                            `<button class="btn btn-sm btn-warning" onclick="markPaymentPending('${doc.id}')">
+                                <i class="fas fa-clock"></i> Mark Pending
+                            </button>`;
+                        
+                        row.innerHTML = `
+                            <td>${formattedDate}</td>
+                            <td>${studentName}</td>
+                            <td>${classData.classType.charAt(0).toUpperCase() + classData.classType.slice(1)}</td>
+                            <td>${classData.duration} mins</td>
+                            <td>₹${classFee}</td>
+                            <td>${statusBadge}</td>
+                            <td>${paymentAction}</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteClassAdmin('${doc.id}')">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        `;
+                        
+                        tableBody.appendChild(row);
+                        resolve();
+                    });
+                });
+                
+                classPromises.push(promise);
+            });
+            
+            return Promise.all(classPromises);
+        })
+        .then(() => {
+            // Update payment summary
+            document.getElementById('totalPendingAmount').textContent = `₹${totalPending.toFixed(2)}`;
+            document.getElementById('totalCompletedAmount').textContent = `₹${totalCompleted.toFixed(2)}`;
+            document.getElementById('totalOverallAmount').textContent = `₹${(totalPending + totalCompleted).toFixed(2)}`;
+        })
+        .catch((error) => {
+            console.error('Error loading coach classes:', error);
+            tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Error loading classes</td></tr>';
+        });
+}
+
+function markPaymentComplete(classId) {
+    if (confirm('Mark this payment as completed?')) {
+        db.collection('classes').doc(classId).update({
+            paymentStatus: 'completed',
+            paymentCompletedAt: new Date()
+        })
+        .then(() => {
+            alert('Payment marked as completed!');
+            loadCoachClassesForPayment(); // Refresh the list
+        })
+        .catch((error) => {
+            console.error('Error updating payment status:', error);
+            alert('Error updating payment status: ' + error.message);
+        });
+    }
+}
+
+function markPaymentPending(classId) {
+    if (confirm('Mark this payment as pending?')) {
+        db.collection('classes').doc(classId).update({
+            paymentStatus: 'pending',
+            paymentCompletedAt: null
+        })
+        .then(() => {
+            alert('Payment marked as pending!');
+            loadCoachClassesForPayment(); // Refresh the list
+        })
+        .catch((error) => {
+            console.error('Error updating payment status:', error);
+            alert('Error updating payment status: ' + error.message);
+        });
+    }
+}
+
+function deleteClassAdmin(classId) {
+    if (confirm('Are you sure you want to delete this class?')) {
+        db.collection('classes').doc(classId).delete()
+            .then(() => {
+                alert('Class deleted successfully!');
+                loadCoachClassesForPayment(); // Refresh the list
+            })
+            .catch((error) => {
+                console.error('Error deleting class:', error);
+                alert('Error deleting class: ' + error.message);
+            });
+    }
+}
+
+function exportCoachPayments() {
+    const coachId = document.getElementById('paymentCoachSelect').value;
+    if (!coachId) {
+        alert('Please select a coach first');
+        return;
+    }
+    
+    // Simple CSV export
+    let csvContent = "Date,Student,Type,Duration,Fee,Status\n";
+    
+    const rows = document.querySelectorAll('#coachClassesTableBody tr');
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length >= 6) {
+            const rowData = [
+                cells[0].textContent,
+                cells[1].textContent,
+                cells[2].textContent,
+                cells[3].textContent,
+                cells[4].textContent,
+                cells[5].textContent.replace('Completed', 'Paid').replace('Pending', 'Unpaid')
+            ];
+            csvContent += rowData.join(',') + '\n';
+        }
+    });
+    
+    // Download CSV
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `coach-payments-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+}
