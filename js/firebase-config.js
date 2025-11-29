@@ -1,8 +1,14 @@
+// Replace ALL of this with your actual Firebase config
 const firebaseConfig = {
-  apiKey: "your-api-key-here",
-  authDomain: "your-project.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-project.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "your-app-id"
+  apiKey: "your-actual-api-key-from-firebase",
+  authDomain: "your-project-id.firebaseapp.com",
+  projectId: "your-actual-project-id",
+  storageBucket: "your-project-id.appspot.com",
+  messagingSenderId: "your-actual-sender-id",
+  appId: "your-actual-app-id"
 };
+
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const auth = firebase.auth();
