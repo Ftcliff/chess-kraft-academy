@@ -1,4 +1,4 @@
-// Coach dashboard functionality
+// Coach dashboard functionality - SIMPLIFIED VERSION
 document.addEventListener('DOMContentLoaded', function() {
     // Check authentication
     const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -48,12 +48,10 @@ function loadCoachData(coachId) {
             const studentSelect = document.getElementById('studentSelect');
             studentSelect.innerHTML = '<option value="">Select Student</option>';
             
-            const studentPromises = [];
-            
             querySnapshot.forEach((doc) => {
                 const assignment = doc.data();
                 // Get student details
-                const promise = db.collection('students').doc(assignment.studentId).get()
+                db.collection('students').doc(assignment.studentId).get()
                     .then((studentDoc) => {
                         if (studentDoc.exists) {
                             const student = studentDoc.data();
@@ -61,23 +59,18 @@ function loadCoachData(coachId) {
                             option.value = studentDoc.id;
                             option.textContent = student.name;
                             studentSelect.appendChild(option);
-                            return studentDoc.id;
                         }
                     });
-                studentPromises.push(promise);
             });
             
             // Update student count
             document.getElementById('totalStudents').textContent = querySnapshot.size;
-            
-            return Promise.all(studentPromises);
         })
         .catch((error) => {
             console.error('Error loading students:', error);
-            alert('Error loading students: ' + error.message);
         });
     
-    // Load classes and calculate stats
+    // Load classes
     loadCoachClasses(coachId);
 }
 
@@ -86,30 +79,35 @@ function loadCoachClasses(coachId) {
     
     db.collection('classes')
         .where('coachId', '==', coachId)
-        .orderBy('classDate', 'desc')
         .get()
         .then((querySnapshot) => {
             console.log("Found classes:", querySnapshot.size);
             
             let totalClasses = 0;
             let totalAmount = 0;
-            const individualClasses = [];
-            const groupClasses = [];
+            const allClasses = [];
             
             querySnapshot.forEach((doc) => {
                 const classData = doc.data();
                 classData.id = doc.id;
-                console.log("Class data:", classData);
+                allClasses.push(classData);
                 
                 totalClasses++;
                 totalAmount += parseFloat(classData.classFee) || 0;
-                
-                if (classData.classType === 'individual') {
-                    individualClasses.push(classData);
-                } else {
-                    groupClasses.push(classData);
-                }
             });
+            
+            // Sort manually by date (newest first)
+            allClasses.sort((a, b) => {
+                const dateA = a.classDate && a.classDate.seconds ? 
+                    new Date(a.classDate.seconds * 1000) : new Date(a.classDate);
+                const dateB = b.classDate && b.classDate.seconds ? 
+                    new Date(b.classDate.seconds * 1000) : new Date(b.classDate);
+                return dateB - dateA;
+            });
+            
+            // Separate individual and group classes
+            const individualClasses = allClasses.filter(c => c.classType === 'individual');
+            const groupClasses = allClasses.filter(c => c.classType === 'group');
             
             // Update stats
             document.getElementById('totalClasses').textContent = totalClasses;
@@ -129,19 +127,10 @@ function populateClassTable(tableId, classes) {
     const tableBody = document.getElementById(tableId);
     tableBody.innerHTML = '';
     
-    console.log(`Populating ${tableId} with ${classes.length} classes`);
-    
     if (classes.length === 0) {
         tableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No classes found</td></tr>';
         return;
     }
-    
-    // Sort classes by date (newest first)
-    classes.sort((a, b) => {
-        const dateA = a.classDate && a.classDate.seconds ? new Date(a.classDate.seconds * 1000) : new Date(a.classDate);
-        const dateB = b.classDate && b.classDate.seconds ? new Date(b.classDate.seconds * 1000) : new Date(b.classDate);
-        return dateB - dateA;
-    });
     
     classes.forEach((classItem) => {
         const row = document.createElement('tr');
@@ -156,24 +145,19 @@ function populateClassTable(tableId, classes) {
         const formattedDate = classDate.toLocaleDateString('en-IN');
         
         if (classItem.classType === 'individual') {
-            // For individual classes, get student name
             let studentName = 'Unknown Student';
             
             if (classItem.studentId) {
-                // Try to get student name
+                // Get student name
                 db.collection('students').doc(classItem.studentId).get()
                     .then((studentDoc) => {
                         if (studentDoc.exists) {
                             studentName = studentDoc.data().name;
-                            // Update the cell with student name
                             const studentCell = row.cells[1];
                             if (studentCell) {
                                 studentCell.textContent = studentName;
                             }
                         }
-                    })
-                    .catch((error) => {
-                        console.error('Error fetching student:', error);
                     });
             }
             
@@ -215,8 +199,6 @@ function saveClass() {
     const classFee = document.getElementById('classFee').value;
     const notes = document.getElementById('notes').value;
     
-    console.log("Saving class:", { classType, classDate, duration, classFee, notes });
-    
     if (!classType || !classDate || !duration || !classFee) {
         alert('Please fill all required fields');
         return;
@@ -230,10 +212,10 @@ function saveClass() {
     const classData = {
         coachId: user.uid,
         classType: classType,
-        classDate: new Date(classDate), // Store as JavaScript Date object
+        classDate: new Date(classDate),
         duration: parseInt(duration),
         classFee: parseFloat(classFee),
-        notes: notes,
+        notes: notes || '',
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
     };
     
@@ -249,20 +231,22 @@ function saveClass() {
         classData.studentId = studentId;
     }
     
+    console.log("Saving class data:", classData);
+    
     // Save to Firestore
     db.collection('classes').add(classData)
         .then((docRef) => {
             console.log("Class saved with ID:", docRef.id);
             alert('Class added successfully!');
-            document.getElementById('addClassForm').reset();
             
-            // Reset to today's date
+            // Reset form
+            document.getElementById('addClassForm').reset();
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('classDate').value = today;
             
             // Close modal
             const modal = bootstrap.Modal.getInstance(document.getElementById('addClassModal'));
-            modal.hide();
+            if (modal) modal.hide();
             
             // Refresh data
             loadCoachData(user.uid);
@@ -270,6 +254,11 @@ function saveClass() {
         .catch((error) => {
             console.error('Error adding class:', error);
             alert('Error adding class: ' + error.message);
+            
+            // If it's a permissions error, guide user to fix rules
+            if (error.code === 'permission-denied') {
+                alert('PERMISSIONS ERROR: Please update Firestore security rules to allow writes. Go to Firebase Console → Firestore → Rules and use the temporary rules mentioned in the setup.');
+            }
         })
         .finally(() => {
             // Reset button state
@@ -283,7 +272,7 @@ function deleteClass(classId) {
         db.collection('classes').doc(classId).delete()
             .then(() => {
                 const user = JSON.parse(localStorage.getItem('user'));
-                loadCoachData(user.uid); // Refresh data
+                loadCoachData(user.uid);
             })
             .catch((error) => {
                 console.error('Error deleting class:', error);
@@ -309,19 +298,15 @@ function showStudentsModal() {
                 return;
             }
             
-            const studentPromises = [];
-            
             querySnapshot.forEach((doc) => {
                 const assignment = doc.data();
                 
-                // Get student details
-                const promise = db.collection('students').doc(assignment.studentId).get()
+                db.collection('students').doc(assignment.studentId).get()
                     .then((studentDoc) => {
                         if (studentDoc.exists) {
                             const student = studentDoc.data();
                             const row = document.createElement('tr');
                             
-                            // Format assignment date
                             let assignedDate;
                             if (assignment.assignedDate && assignment.assignedDate.seconds) {
                                 assignedDate = new Date(assignment.assignedDate.seconds * 1000);
@@ -341,15 +326,11 @@ function showStudentsModal() {
                             tableBody.appendChild(row);
                         }
                     });
-                
-                studentPromises.push(promise);
             });
             
-            return Promise.all(studentPromises);
-        })
-        .then(() => {
-            // Show modal
-            new bootstrap.Modal(document.getElementById('studentsModal')).show();
+            setTimeout(() => {
+                new bootstrap.Modal(document.getElementById('studentsModal')).show();
+            }, 500);
         })
         .catch((error) => {
             console.error('Error loading students:', error);
